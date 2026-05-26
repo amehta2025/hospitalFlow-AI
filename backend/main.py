@@ -7,20 +7,17 @@ from backend.database import engine, Base, get_db
 from backend.models import HospitalEvent
 from pydantic import BaseModel
 
-# Create tables
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# Allow frontend to talk to backend later
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# --- Schema for incoming events ---
 class EventIn(BaseModel):
     timestamp: str
     event_type: str
@@ -30,8 +27,6 @@ class EventIn(BaseModel):
     severity: int
     scenario: str
 
-
-# --- Routes ---
 @app.get("/")
 def root():
     return {"status": "HospitalFlow API is running"}
@@ -85,26 +80,7 @@ def live_metrics(db: Session = Depends(get_db)):
 
 @app.get("/alerts")
 def get_alerts(db: Session = Depends(get_db)):
-    alerts = []
-
-    ed_avg_wait = db.query(func.avg(HospitalEvent.wait_time_minutes))\
-        .filter(HospitalEvent.department == "ED").scalar() or 0
-
-    if ed_avg_wait > 90:
-        alerts.append({
-            "level": "critical",
-            "message": f"ED average wait time is {round(ed_avg_wait, 1)} minutes — exceeds 90 minute threshold"
-        })
-    elif ed_avg_wait > 60:
-        alerts.append({
-            "level": "warning",
-            "message": f"ED average wait time is {round(ed_avg_wait, 1)} minutes — approaching critical threshold"
-        })
-
-    if not alerts:
-        alerts.append({
-            "level": "ok",
-            "message": "All systems normal"
-        })
-
-    return {"alerts": alerts}
+    from backend.alerts import compute_metrics, detect_anomalies
+    metrics = compute_metrics(db)
+    alerts = detect_anomalies(metrics)
+    return {"metrics": metrics, "alerts": alerts}
