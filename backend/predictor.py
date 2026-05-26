@@ -1,19 +1,10 @@
 import numpy as np
-import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-from backend.models import HospitalEvent
 import random
 
 
 def generate_training_data(n_samples: int = 1000) -> tuple:
-    """
-    Generate synthetic labeled training data based on scenario rules.
-    Label 1 = ED crisis risk, Label 0 = normal operations.
-    """
     X = []
     y = []
 
@@ -26,7 +17,7 @@ def generate_training_data(n_samples: int = 1000) -> tuple:
             lab_wait = random.uniform(20, 55)
             discharge_wait = random.uniform(20, 45)
             transport_wait = random.uniform(5, 25)
-            high_severity = random.randint(5, 18)
+            high_severity_pct = random.uniform(5, 30)
             hour = random.randint(0, 23)
             label = 0
 
@@ -36,7 +27,7 @@ def generate_training_data(n_samples: int = 1000) -> tuple:
             lab_wait = random.uniform(60, 120)
             discharge_wait = random.uniform(50, 100)
             transport_wait = random.uniform(20, 50)
-            high_severity = random.randint(25, 50)
+            high_severity_pct = random.uniform(40, 75)
             hour = random.randint(10, 22)
             label = 1
 
@@ -46,7 +37,7 @@ def generate_training_data(n_samples: int = 1000) -> tuple:
             lab_wait = random.uniform(30, 70)
             discharge_wait = random.uniform(60, 110)
             transport_wait = random.uniform(15, 40)
-            high_severity = random.randint(20, 45)
+            high_severity_pct = random.uniform(35, 65)
             hour = random.randint(8, 22)
             label = 1
 
@@ -56,14 +47,14 @@ def generate_training_data(n_samples: int = 1000) -> tuple:
             lab_wait = random.uniform(90, 160)
             discharge_wait = random.uniform(30, 70)
             transport_wait = random.uniform(10, 30)
-            high_severity = random.randint(15, 35)
+            high_severity_pct = random.uniform(25, 55)
             hour = random.randint(6, 20)
             label = 1 if lab_wait > 110 else 0
 
         X.append([
             ed_wait, icu_wait, lab_wait,
             discharge_wait, transport_wait,
-            high_severity, hour
+            high_severity_pct, hour
         ])
         y.append(label)
 
@@ -86,16 +77,12 @@ FEATURE_NAMES = [
     "lab_avg_wait_minutes",
     "discharge_avg_wait_minutes",
     "transport_avg_wait_minutes",
-    "recent_high_severity_count",
+    "recent_high_severity_pct",
     "hour_of_day",
 ]
 
 
 def predict_risk(metrics: dict) -> dict:
-    """
-    Given current hospital metrics, predict ED crisis risk.
-    Returns risk score, prediction, and top contributing factors.
-    """
     from datetime import datetime
     hour = datetime.utcnow().hour
 
@@ -105,14 +92,13 @@ def predict_risk(metrics: dict) -> dict:
         metrics.get("lab_avg_wait_minutes", 0),
         metrics.get("discharge_avg_wait_minutes", 0),
         metrics.get("transport_avg_wait_minutes", 0),
-        metrics.get("recent_high_severity_count", 0),
+        metrics.get("recent_high_severity_pct", 0),
         hour,
     ]])
 
     features_scaled = scaler.transform(features)
     risk_score = model.predict_proba(features_scaled)[0][1]
     prediction = "high" if risk_score > 0.6 else "medium" if risk_score > 0.3 else "low"
-
 
     importances = model.feature_importances_
     feature_values = features[0]

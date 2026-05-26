@@ -1,64 +1,63 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from datetime import datetime, timedelta
 from backend.models import HospitalEvent
 
 
-def compute_metrics(db: Session) -> dict:
-    """Compute current hospital metrics from the database."""
+def compute_metrics(db: Session, window_minutes: int = 10) -> dict:
+    cutoff = datetime.utcnow() - timedelta(minutes=window_minutes)
 
-    # Overall average wait
-    avg_wait = db.query(func.avg(HospitalEvent.wait_time_minutes)).scalar() or 0
+    def avg_wait(department=None, event_types=None):
+        q = db.query(func.avg(HospitalEvent.wait_time_minutes))\
+            .filter(HospitalEvent.timestamp >= cutoff)
+        if department:
+            q = q.filter(HospitalEvent.department == department)
+        if event_types:
+            q = q.filter(HospitalEvent.event_type.in_(event_types))
+        return round(q.scalar() or 0, 1)
 
-    # ED specific
-    ed_avg_wait = db.query(func.avg(HospitalEvent.wait_time_minutes))\
-        .filter(HospitalEvent.department == "ED").scalar() or 0
+    avg_wait_all = avg_wait()
+    ed_avg = avg_wait(department="ED")
+    icu_avg = avg_wait(department="ICU")
+    lab_avg = avg_wait(department="Lab")
+    transport_avg = avg_wait(department="Transport")
+    discharge_avg = avg_wait(event_types=["discharge_started", "discharge_complete"])
 
-    # ICU specific
-    icu_avg_wait = db.query(func.avg(HospitalEvent.wait_time_minutes))\
-        .filter(HospitalEvent.department == "ICU").scalar() or 0
+    total_recent = db.query(HospitalEvent)\
+        .filter(HospitalEvent.timestamp >= cutoff).count()
 
-    # Lab turnaround
-    lab_avg_wait = db.query(func.avg(HospitalEvent.wait_time_minutes))\
-        .filter(HospitalEvent.department == "Lab").scalar() or 0
+    high_severity_recent = db.query(HospitalEvent)\
+        .filter(HospitalEvent.timestamp >= cutoff)\
+        .filter(HospitalEvent.severity >= 4).count()
 
-    # Transport delays
-    transport_avg_wait = db.query(func.avg(HospitalEvent.wait_time_minutes))\
-        .filter(HospitalEvent.department == "Transport").scalar() or 0
-
-    # Discharge backlog — average wait for discharge events
-    discharge_avg_wait = db.query(func.avg(HospitalEvent.wait_time_minutes))\
-        .filter(HospitalEvent.event_type.in_(["discharge_started", "discharge_complete"]))\
-        .scalar() or 0
-
-    # High severity events in last 100 events
-    recent_high_severity = db.query(HospitalEvent)\
-        .filter(HospitalEvent.severity >= 4)\
-        .order_by(HospitalEvent.id.desc())\
-        .limit(100).count()
+    high_severity_pct = round(
+        (high_severity_recent / total_recent * 100) if total_recent > 0 else 0, 1
+    )
 
     return {
-        "avg_wait_minutes": round(avg_wait, 1),
-        "ed_avg_wait_minutes": round(ed_avg_wait, 1),
-        "icu_avg_wait_minutes": round(icu_avg_wait, 1),
-        "lab_avg_wait_minutes": round(lab_avg_wait, 1),
-        "transport_avg_wait_minutes": round(transport_avg_wait, 1),
-        "discharge_avg_wait_minutes": round(discharge_avg_wait, 1),
-        "recent_high_severity_count": recent_high_severity,
+        "window_minutes": window_minutes,
+        "total_recent_events": total_recent,
+        "avg_wait_minutes": avg_wait_all,
+        "ed_avg_wait_minutes": ed_avg,
+        "icu_avg_wait_minutes": icu_avg,
+        "lab_avg_wait_minutes": lab_avg,
+        "transport_avg_wait_minutes": transport_avg,
+        "discharge_avg_wait_minutes": discharge_avg,
+        "recent_high_severity_count": high_severity_recent,
+        "recent_high_severity_pct": high_severity_pct,
     }
 
 
 def detect_anomalies(metrics: dict) -> list:
-    """Apply rule-based anomaly detection to current metrics."""
     alerts = []
 
-    # --- ED wait time rules ---
     if metrics["ed_avg_wait_minutes"] > 90:
         alerts.append({
             "level": "critical",
             "department": "ED",
             "metric": "ed_avg_wait_minutes",
             "value": metrics["ed_avg_wait_minutes"],
-            "message": f"ED average wait time is {metrics['ed_avg_wait_minutes']} min — critical threshold exceeded (>90 min)"
+            "message": f"ED average wait is {metrics['ed_avg_wait_minutes']} min — critical threshold exceeded (>90 min)"
         })
     elif metrics["ed_avg_wait_minutes"] > 60:
         alerts.append({
@@ -66,10 +65,9 @@ def detect_anomalies(metrics: dict) -> list:
             "department": "ED",
             "metric": "ed_avg_wait_minutes",
             "value": metrics["ed_avg_wait_minutes"],
-            "message": f"ED average wait time is {metrics['ed_avg_wait_minutes']} min — approaching critical threshold (>60 min)"
+            "message": f"ED average wait is {metrics['ed_avg_wait_minutes']} min — approaching critical threshold (>60 min)"
         })
 
-    # --- ICU wait time rules ---
     if metrics["icu_avg_wait_minutes"] > 80:
         alerts.append({
             "level": "critical",
@@ -87,7 +85,6 @@ def detect_anomalies(metrics: dict) -> list:
             "message": f"ICU average wait is {metrics['icu_avg_wait_minutes']} min — monitor closely"
         })
 
-    # --- Lab turnaround rules ---
     if metrics["lab_avg_wait_minutes"] > 90:
         alerts.append({
             "level": "critical",
@@ -105,7 +102,6 @@ def detect_anomalies(metrics: dict) -> list:
             "message": f"Lab turnaround is {metrics['lab_avg_wait_minutes']} min — delays likely affecting ED throughput"
         })
 
-    # --- Discharge backlog rules ---
     if metrics["discharge_avg_wait_minutes"] > 75:
         alerts.append({
             "level": "critical",
@@ -123,22 +119,21 @@ def detect_anomalies(metrics: dict) -> list:
             "message": f"Discharge average wait is {metrics['discharge_avg_wait_minutes']} min — monitor for backlog buildup"
         })
 
-    # --- High severity event spike ---
-    if metrics["recent_high_severity_count"] > 30:
+    if metrics["recent_high_severity_pct"] > 50:
         alerts.append({
             "level": "critical",
             "department": "Hospital-wide",
-            "metric": "recent_high_severity_count",
-            "value": metrics["recent_high_severity_count"],
-            "message": f"{metrics['recent_high_severity_count']} high-severity events in last 100 — hospital under significant stress"
+            "metric": "recent_high_severity_pct",
+            "value": metrics["recent_high_severity_pct"],
+            "message": f"{metrics['recent_high_severity_pct']}% of recent events are high-severity — hospital under significant stress"
         })
-    elif metrics["recent_high_severity_count"] > 20:
+    elif metrics["recent_high_severity_pct"] > 35:
         alerts.append({
             "level": "warning",
             "department": "Hospital-wide",
-            "metric": "recent_high_severity_count",
-            "value": metrics["recent_high_severity_count"],
-            "message": f"{metrics['recent_high_severity_count']} high-severity events in last 100 — elevated patient acuity"
+            "metric": "recent_high_severity_pct",
+            "value": metrics["recent_high_severity_pct"],
+            "message": f"{metrics['recent_high_severity_pct']}% of recent events are high-severity — elevated patient acuity"
         })
 
     if not alerts:
