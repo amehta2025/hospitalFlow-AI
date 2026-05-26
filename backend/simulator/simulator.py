@@ -1,4 +1,5 @@
 import random
+import requests
 import time
 import json
 from datetime import datetime
@@ -74,7 +75,7 @@ def generate_event(patient_id: int) -> dict:
 
 
 def run_simulator(interval_seconds: float = 1.0, num_events: int = None):
-    """Stream hospital events to stdout."""
+    """Stream hospital events to the FastAPI backend."""
     print(f"Starting HospitalFlow simulator — scenario: {SCENARIO}")
     print("-" * 50)
 
@@ -83,12 +84,17 @@ def run_simulator(interval_seconds: float = 1.0, num_events: int = None):
 
     try:
         while True:
-            # Occasionally increment patient ID to simulate new arrivals
             if random.random() < 0.3:
                 patient_counter += 1
 
             event = generate_event(patient_counter)
-            print(json.dumps(event))
+            
+            # Send to API instead of just printing
+            try:
+                response = requests.post("http://127.0.0.1:8000/events", json=event)
+                print(f"Sent: {event['event_type']} | {event['department']} | wait: {event['wait_time_minutes']}min | status: {response.status_code}")
+            except Exception as e:
+                print(f"Failed to send event: {e}")
 
             events_generated += 1
             if num_events and events_generated >= num_events:
@@ -98,6 +104,3 @@ def run_simulator(interval_seconds: float = 1.0, num_events: int = None):
 
     except KeyboardInterrupt:
         print("\nSimulator stopped.")
-        
-if __name__ == "__main__":
-    run_simulator(interval_seconds=1.0)
