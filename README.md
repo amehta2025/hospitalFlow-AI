@@ -56,7 +56,7 @@ React Dashboard (live, auto-refreshing)
 
 ## Key Features
 
-**Time-windowed metrics** — all metrics computed over a rolling 10-minute window so the system reflects current hospital state, not historical averages.
+**10-minute window metrics** — all metrics computed over a rolling 10-minute window so the system displays the current hospital state, not historical averages.
 
 **Multi-signal anomaly detection** — monitors ED wait time, ICU pressure, lab turnaround, discharge backlog, transport delays, and high-severity event rate simultaneously.
 
