@@ -6,6 +6,7 @@ from datetime import datetime
 from backend.database import engine, Base, get_db
 from backend.models import HospitalEvent
 from pydantic import BaseModel
+from backend.summarizer import generate_summary
 from backend.predictor import predict_risk
 
 Base.metadata.create_all(bind=engine)
@@ -91,3 +92,13 @@ def get_prediction(db: Session = Depends(get_db)):
     metrics = compute_metrics(db)
     prediction = predict_risk(metrics)
     return prediction
+
+@app.get("/summary")
+def get_summary(db: Session = Depends(get_db)):
+    from backend.alerts import compute_metrics, detect_anomalies
+    from backend.predictor import predict_risk
+    metrics = compute_metrics(db)
+    alerts = detect_anomalies(metrics)
+    prediction = predict_risk(metrics)
+    summary = generate_summary(metrics, alerts, prediction)
+    return {"summary": summary, "metrics": metrics, "alerts": alerts, "prediction": prediction}
