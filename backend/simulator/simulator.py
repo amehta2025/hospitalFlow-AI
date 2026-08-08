@@ -2,6 +2,7 @@ import random
 import requests
 import time
 import json
+import os
 from datetime import datetime
 
 # --- Config ---
@@ -91,7 +92,7 @@ def run_simulator(interval_seconds: float = 1.0, num_events: int = None):
             
             # Send to API instead of just printing
             try:
-                response = requests.post("http://127.0.0.1:8000/events", json=event)
+                response = requests.post(f"http://127.0.0.1:{os.getenv('PORT', '8000')}/events", json=event)
                 print(f"Sent: {event['event_type']} | {event['department']} | wait: {event['wait_time_minutes']}min | status: {response.status_code}")
             except Exception as e:
                 print(f"Failed to send event: {e}")
