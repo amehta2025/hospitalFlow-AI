@@ -1,13 +1,21 @@
 from openai import OpenAI
 import os
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+_cache = {"summary": None, "timestamp": 0}
+CACHE_SECONDS = 180
+
 
 def generate_summary(metrics: dict, alerts: list, prediction: dict) -> str:
+    now = time.time()
+    if _cache["summary"] and (now - _cache["timestamp"]) < CACHE_SECONDS:
+        return _cache["summary"]
+
     alert_text = "\n".join([f"- [{a['level'].upper()}] {a['message']}" for a in alerts])
     top_factors = "\n".join([
         f"- {f['factor']}: {f['current_value']} (importance: {f['importance']})"
@@ -42,4 +50,7 @@ Write a 3-4 sentence plain-English summary for an operations manager. Explain wh
         temperature=0.4,
     )
 
-    return response.choices[0].message.content.strip()
+    result = response.choices[0].message.content.strip()
+    _cache["summary"] = result
+    _cache["timestamp"] = now
+    return result
