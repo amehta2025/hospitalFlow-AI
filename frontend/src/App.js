@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import axios from "axios";
 
-const API = "http://127.0.0.1:8000";
+const API = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
