@@ -2,6 +2,10 @@
 
 Real-time hospital operations intelligence platform that predicts Emergency Department boarding crises before they happen.
 
+**[Live Demo](https://hospital-flow-ai-six.vercel.app)**
+
+> Hosted on free-tier infrastructure that sleeps when idle — the first load may take up to 60 seconds while the backend spins up.
+
 ---
 
 ## The Problem
@@ -27,30 +31,32 @@ HospitalFlow AI is a proof-of-concept platform that unifies those streams, detec
 ## Architecture
 
 ```
-Hospital Event Simulator
-        ↓
-FastAPI Backend (REST API)
-        ↓
-PostgreSQL Database
-        ↓
-Rule-Based Anomaly Detection  →  Alerts
-ML Risk Predictor             →  Risk Score + Top Factors
-LLM Summarizer (GPT-4o-mini)  →  Plain-English Incident Summary
-        ↓
-React Dashboard (live, auto-refreshing)
+Browser
+   ↓
+React Dashboard (Vercel) — live, auto-refreshing every 15s
+   ↓  HTTPS / REST
+FastAPI Backend (Render)
+   ├── Event Simulator (background thread)  →  POST /events
+   ├── Rule-Based Anomaly Detection         →  Alerts
+   ├── ML Risk Predictor                    →  Risk Score + Top Factors
+   └── LLM Summarizer (GPT-4o-mini)         →  Plain-English Incident Summary
+   ↓  SQL over TLS
+PostgreSQL (Neon)
 ```
+
+Each layer talks only to the layer below it — the frontend never touches the database directly; all access is mediated by the API.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Backend | Python, FastAPI, SQLAlchemy |
-| Database | PostgreSQL |
-| ML | scikit-learn (Random Forest) |
-| AI | OpenAI GPT-4o-mini |
-| Frontend | React, Recharts |
+| Layer | Technology | Hosted On |
+|---|---|---|
+| Frontend | React, Recharts, axios | Vercel |
+| Backend | Python, FastAPI, SQLAlchemy | Render |
+| Database | PostgreSQL | Neon |
+| ML | scikit-learn (Random Forest) | — |
+| AI | OpenAI GPT-4o-mini | — |
 
 ---
 
@@ -62,7 +68,7 @@ React Dashboard (live, auto-refreshing)
 
 **ML risk prediction** — Random Forest trained on scenario-based synthetic data predicts ED boarding crisis probability with top contributing factors and feature importances.
 
-**LLM incident summary** — structured metrics fed to GPT-4o-mini generate a 3-4 sentence clinical narrative with specific numbers and recommended actions for operations managers.
+**LLM incident summary** — structured metrics fed to GPT-4o-mini generate a 3-4 sentence clinical narrative with specific numbers and recommended actions for operations managers. Responses are cached server-side (3-minute TTL) so API cost stays flat regardless of traffic.
 
 **Live dashboard** — color-coded metric cards, real-time trend chart, active alerts panel, AI summary, and ML risk score — all auto-updating.
 
@@ -102,18 +108,13 @@ psql -U postgres -c "CREATE DATABASE hospitalflow;"
 
 **5. Start the backend server**
 
+The event simulator starts automatically as a background thread via the FastAPI lifespan handler.
+
 ```bash
 uvicorn backend.main:app --reload
 ```
 
-**6. Start the simulator (new terminal)**
-
-```bash
-venv\Scripts\activate
-python -c "from backend.simulator.simulator import run_simulator; run_simulator()"
-```
-
-**7. Start the frontend (new terminal)**
+**6. Start the frontend (new terminal)**
 
 ```bash
 cd frontend
@@ -121,7 +122,7 @@ npm install
 npm start
 ```
 
-Visit `http://localhost:3000` to see the live dashboard.
+Visit `http://localhost:3000` to see the live dashboard. The frontend reads `REACT_APP_API_URL` and falls back to `http://127.0.0.1:8000` for local development.
 
 ---
 
@@ -138,20 +139,19 @@ Visit `http://localhost:3000` to see the live dashboard.
 
 ---
 
-## Honest Limitations
 
-- Training data is synthetic, generated from simulator scenarios rather than real EHR data. A production system would retrain on labeled historical incident data.
-- The 10-minute event window tracks operational activity patterns, not individual patient wait times end-to-end.
-- Anomaly thresholds are clinically informed estimates, not validated against real hospital outcome data.
+## Where This Could Go
+
+Running this service across several hospitals can drive routing decisions EMS can act on before diversion becomes necessary. That shifts the system from monitoring to load balancing, and is the direction this architecture was built to support.
 
 ---
 
 ## Research Background
 
-- ED boarding associated with increased in-hospital mortality 
+- ED boarding associated with increased in-hospital mortality
 - Average ED length of stay increased 52% post-COVID and has not recovered
 - AHRQ issued a Special Emphasis Notice for research specifically targeting ED boarding
-- Real-time discharge volume prediction shown to reduce ED boarding times 
+- Real-time discharge volume prediction shown to reduce ED boarding times
 
 ---
 
