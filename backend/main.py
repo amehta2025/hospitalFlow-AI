@@ -1,3 +1,6 @@
+import threading
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -11,7 +14,15 @@ from backend.predictor import predict_risk
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from backend.simulator.simulator import run_simulator
+    threading.Thread(target=run_simulator, daemon=True).start()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,6 +30,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
 class EventIn(BaseModel):
     timestamp: str
     event_type: str
@@ -27,6 +40,7 @@ class EventIn(BaseModel):
     wait_time_minutes: float
     severity: int
     scenario: str
+
 
 @app.get("/")
 def root():
@@ -86,12 +100,14 @@ def get_alerts(db: Session = Depends(get_db)):
     alerts = detect_anomalies(metrics)
     return {"metrics": metrics, "alerts": alerts}
 
+
 @app.get("/predict")
 def get_prediction(db: Session = Depends(get_db)):
     from backend.alerts import compute_metrics
     metrics = compute_metrics(db)
     prediction = predict_risk(metrics)
     return prediction
+
 
 @app.get("/summary")
 def get_summary(db: Session = Depends(get_db)):
