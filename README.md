@@ -4,7 +4,7 @@ Real-time hospital operations intelligence platform that predicts Emergency Depa
 
 **[Live Demo](https://hospital-flow-ai-six.vercel.app)**
 
-> Hosted on free-tier infrastructure that sleeps when idle — the first load may take up to 60 seconds while the backend spins up.
+> The first load may take up to 60 seconds.
 
 ---
 
